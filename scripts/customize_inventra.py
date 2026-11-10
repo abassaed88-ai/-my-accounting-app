@@ -753,5 +753,5 @@ if "BottomNavItem(Screen.Currency" not in n or "BottomNavItem(Screen.Invoices" n
                 out.append('    BottomNavItem(Screen.Currency, "العملات", Icons.Filled.Settings, Icons.Outlined.Settings),')
             if "BottomNavItem(Screen.Invoices" not in n:
                 out.append('    BottomNavItem(Screen.Invoices, "الفواتير", Icons.Filled.Description, Icons.Outlined.Description),')
-    n = "\\n".join(out) + "\\n"
+    n = "\n".join(out) + "\n"
 nav.write_text(n)
