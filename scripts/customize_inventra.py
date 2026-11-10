@@ -480,6 +480,10 @@ import android.content.Intent
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextDirectionHeuristics
+import android.text.TextPaint
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -541,20 +545,22 @@ fun InvoiceScreen(onBack: () -> Unit) {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.RIGHT
         }
-        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.DKGRAY
             textSize = 17f
-            textAlign = Paint.Align.RIGHT
         }
-        var y = 80f
-        canvas.drawText("فاتورة مبيعات", 540f, y, titlePaint)
-        y += 48f
-        val lines = invoiceText().lines()
-        lines.drop(1).forEach { line ->
-            if (y > 790f) return@forEach
-            canvas.drawText(line.take(68), 540f, y, bodyPaint)
-            y += 31f
-        }
+        canvas.drawText("فاتورة مبيعات", 540f, 80f, titlePaint)
+        val content = invoiceText()
+        val layout = StaticLayout.Builder.obtain(content, 0, content.length, bodyPaint, 500)
+            .setAlignment(Layout.Alignment.ALIGN_OPPOSITE)
+            .setTextDirection(TextDirectionHeuristics.RTL)
+            .setLineSpacing(8f, 1f)
+            .setMaxLines(20)
+            .build()
+        canvas.save()
+        canvas.translate(45f, 125f)
+        layout.draw(canvas)
+        canvas.restore()
         document.finishPage(page)
         val folder = File(context.filesDir, "invoices").apply { mkdirs() }
         val file = File(folder, "invoice_${System.currentTimeMillis()}.pdf")
