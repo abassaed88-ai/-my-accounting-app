@@ -662,20 +662,20 @@ nav = root / "presentation/navigation/NavGraph.kt"
 n = nav.read_text()
 if "import com.inventra.app.presentation.invoices.InvoiceScreen" not in n:
     n = n.replace("import com.inventra.app.presentation.stock.StockInScreen",
-                  "import com.inventra.app.presentation.stock.StockInScreen\\nimport com.inventra.app.presentation.invoices.InvoiceScreen")
+                  "import com.inventra.app.presentation.stock.StockInScreen\nimport com.inventra.app.presentation.invoices.InvoiceScreen")
 if 'object Invoices : Screen("invoices")' not in n:
     n = n.replace('    object Inventory : Screen("inventory")',
-                  '    object Inventory : Screen("inventory")\\n    object Invoices : Screen("invoices")')
+                  '    object Inventory : Screen("inventory")\n    object Invoices : Screen("invoices")')
 if 'BottomNavItem(Screen.Invoices' not in n:
     n = n.replace('    BottomNavItem(Screen.Inventory, "Inventory", Icons.Filled.Inventory, Icons.Outlined.Inventory),',
-                  '    BottomNavItem(Screen.Inventory, "Inventory", Icons.Filled.Inventory, Icons.Outlined.Inventory),\\n    BottomNavItem(Screen.Invoices, "الفواتير", Icons.Filled.Description, Icons.Outlined.Description),')
+                  '    BottomNavItem(Screen.Inventory, "Inventory", Icons.Filled.Inventory, Icons.Outlined.Inventory),\n    BottomNavItem(Screen.Invoices, "الفواتير", Icons.Filled.Description, Icons.Outlined.Description),')
 if 'composable(Screen.Invoices.route)' not in n:
     n = n.replace('            composable(Screen.Inventory.route) { InventoryScreen() }',
-                  '            composable(Screen.Inventory.route) { InventoryScreen() }\\n            composable(Screen.Invoices.route) { InvoiceScreen(onBack = { navController.popBackStack() }) }')
+                  '            composable(Screen.Inventory.route) { InventoryScreen() }\n            composable(Screen.Invoices.route) { InvoiceScreen(onBack = { navController.popBackStack() }) }')
 n = n.replace("import androidx.compose.material.icons.filled.ShoppingBag",
-              "import androidx.compose.material.icons.filled.ShoppingBag\\nimport androidx.compose.material.icons.filled.Description")
+              "import androidx.compose.material.icons.filled.ShoppingBag\nimport androidx.compose.material.icons.filled.Description")
 n = n.replace("import androidx.compose.material.icons.outlined.ShoppingBag",
-              "import androidx.compose.material.icons.outlined.ShoppingBag\\nimport androidx.compose.material.icons.outlined.Description")
+              "import androidx.compose.material.icons.outlined.ShoppingBag\nimport androidx.compose.material.icons.outlined.Description")
 nav.write_text(n)
 
 manifest = Path("inventra/app/src/main/AndroidManifest.xml")
