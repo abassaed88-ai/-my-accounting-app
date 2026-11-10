@@ -20,7 +20,7 @@ jobs:
           ref: master
           path: inventra
 
-      - name: Setup Java
+      - name: Customize accounting app\n        run: python scripts/customize_inventra.py\n\n      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
