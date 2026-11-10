@@ -342,4 +342,130 @@ private fun SaleCard(sale: Sale) {
 }
 ''')
 
+
+
+# Manual USD/SYP exchange rate and dual-currency display.
+currency_dir = root / "presentation/currency"
+currency_dir.mkdir(parents=True, exist_ok=True)
+(currency_dir / "CurrencyUi.kt").write_text(r'''package com.inventra.app.presentation.currency
+
+import android.content.Context
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
+import java.util.Locale
+
+object CurrencyPrefs {
+    private const val PREFS = "accounting_currency_settings"
+    private const val KEY_RATE = "usd_to_syp_rate"
+    val rateState = mutableStateOf(0.0)
+    fun load(context: Context) {
+        rateState.value = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_RATE, "0")?.toDoubleOrNull() ?: 0.0
+    }
+    fun save(context: Context, rate: Double) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_RATE, rate.toString()).apply()
+        rateState.value = rate
+    }
+    fun getRate(): Double = rateState.value
+}
+
+@Composable
+fun dualCurrencyLabel(amountUsd: Double): String {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { CurrencyPrefs.load(context) }
+    val rate by CurrencyPrefs.rateState
+    val usd = "$" + DecimalFormat("#,##0.##").format(amountUsd)
+    return if (rate > 0.0) {
+        val syp = DecimalFormat("#,##0", DecimalFormatSymbols(Locale("ar"))).format(amountUsd * rate)
+        "$usd  |  $syp ل.س"
+    } else "$usd  |  حدّد سعر الصرف"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CurrencySettingsScreen() {
+    val context = LocalContext.current
+    val rate by CurrencyPrefs.rateState
+    var input by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        CurrencyPrefs.load(context)
+        if (CurrencyPrefs.getRate() > 0.0) input = CurrencyPrefs.getRate().toString()
+    }
+    Scaffold(
+        containerColor = Color(0xFFF4F7FC),
+        topBar = { TopAppBar(title = { Text("إعدادات العملات", fontWeight = FontWeight.Bold) }) }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF172554))) {
+                Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                    Icon(Icons.Default.CurrencyExchange, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text("الليرة السورية والدولار", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("سيظهر كل مبلغ بالعملتين جنباً إلى جنب وفق السعر الذي تحدده.", color = Color.White.copy(alpha = .8f))
+                }
+            }
+            Text("سعر صرف الدولار", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = input, onValueChange = { input = it; message = null },
+                modifier = Modifier.fillMaxWidth(), label = { Text("كم ليرة سورية تساوي 1 دولار؟") },
+                placeholder = { Text("مثال: 13000") }, suffix = { Text("ل.س / $1") },
+                singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+            Button(onClick = {
+                val value = input.trim().replace(",", ".").toDoubleOrNull()
+                if (value == null || !value.isFinite() || value <= 0.0) message = "أدخل سعر صرف صحيحاً أكبر من صفر"
+                else { CurrencyPrefs.save(context, value); message = "تم حفظ سعر الصرف على هذا الجهاز" }
+            }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("حفظ سعر الصرف", fontWeight = FontWeight.Bold) }
+            if (message != null) Text(message!!, color = if (rate > 0.0) Color(0xFF087F5B) else MaterialTheme.colorScheme.error)
+            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("السعر المعتمد حالياً", fontWeight = FontWeight.Bold)
+                    if (rate > 0.0) {
+                        Text("1 دولار = \${DecimalFormat("#,##0.##").format(rate)} ليرة سورية", style = MaterialTheme.typography.titleMedium, color = Color(0xFF2563EB), fontWeight = FontWeight.Bold)
+                        Text("يمكنك تغييره في أي وقت، وسيُستخدم في عرض القيم المحوّلة.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                    } else Text("لم يتم تحديد سعر صرف بعد", color = Color(0xFFB45309))
+                }
+            }
+            Text("الأسعار الأصلية والعمليات المحاسبية تبقى محفوظة بقيمتها الأساسية بالدولار، ويُعرض مقابلها بالليرة حسب السعر الذي تحدده. تغيير السعر لا يغيّر سجلات المبيعات أو الأرباح السابقة.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+''')
+
+dashboard = root / "presentation/dashboard/DashboardScreen.kt"
+d = dashboard.read_text()
+d = d.replace("import com.inventra.app.ui.components.formatCurrency", "import com.inventra.app.ui.components.formatCurrency\nimport com.inventra.app.presentation.currency.dualCurrencyLabel")
+d = d.replace("formatCurrency(summary.totalRevenue)", "dualCurrencyLabel(summary.totalRevenue)")
+d = d.replace("formatCurrency(summary.totalProfit)", "dualCurrencyLabel(summary.totalProfit)")
+d = d.replace("formatCurrency(sale.totalRevenue)", "dualCurrencyLabel(sale.totalRevenue)")
+d = d.replace("formatCurrency(sale.profit)", "dualCurrencyLabel(sale.profit)")
+dashboard.write_text(d)
+
+nav = root / "presentation/navigation/NavGraph.kt"
+n = nav.read_text()
+n = n.replace("import androidx.compose.material.icons.filled.ShoppingBag", "import androidx.compose.material.icons.filled.ShoppingBag\nimport androidx.compose.material.icons.filled.Settings")
+n = n.replace("import androidx.compose.material.icons.outlined.ShoppingBag", "import androidx.compose.material.icons.outlined.ShoppingBag\nimport androidx.compose.material.icons.outlined.Settings")
+n = n.replace("import com.inventra.app.presentation.stock.StockInScreen", "import com.inventra.app.presentation.stock.StockInScreen\nimport com.inventra.app.presentation.currency.CurrencySettingsScreen")
+n = n.replace('    object Inventory : Screen("inventory")', '    object Inventory : Screen("inventory")\n    object Currency : Screen("currency")')
+n = n.replace('    BottomNavItem(Screen.Inventory, "Inventory", Icons.Filled.Inventory, Icons.Outlined.Inventory),', '    BottomNavItem(Screen.Inventory, "Inventory", Icons.Filled.Inventory, Icons.Outlined.Inventory),\n    BottomNavItem(Screen.Currency, "العملات", Icons.Filled.Settings, Icons.Outlined.Settings),')
+n = n.replace('            composable(Screen.Inventory.route) { InventoryScreen() }', '            composable(Screen.Inventory.route) { InventoryScreen() }\n            composable(Screen.Currency.route) { CurrencySettingsScreen() }')
+nav.write_text(n)
+
+print("Customization completed: Arabic colorful dashboard, manual USD/SYP exchange rate, dual currency display and Arabic RTL.")
+
 print("Customization completed: atomic stock/sale writes, validation, Arabic RTL locale, app branding and expanded Arabic labels.")
