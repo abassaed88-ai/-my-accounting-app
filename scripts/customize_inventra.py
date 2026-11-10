@@ -736,3 +736,22 @@ n = n.replace("import androidx.compose.material.icons.outlined.ShoppingBag",
 nav.write_text(n)
 
 print("Invoices now select existing recorded sales, display real product/quantity/price values, calculate totals automatically and export/share multi-page PDF or copyable text. No duplicate sale or stock adjustment is created.")
+
+
+# Ensure both added screens are reachable from the main Arabic navigation bar.
+# The earlier translation pass changes the Inventory label before this nav patch runs,
+# so match the route rather than relying on the original English label.
+nav = root / "presentation/navigation/NavGraph.kt"
+n = nav.read_text()
+if "BottomNavItem(Screen.Currency" not in n or "BottomNavItem(Screen.Invoices" not in n:
+    lines = n.splitlines()
+    out = []
+    for line in lines:
+        out.append(line)
+        if "BottomNavItem(Screen.Inventory," in line:
+            if "BottomNavItem(Screen.Currency" not in n:
+                out.append('    BottomNavItem(Screen.Currency, "العملات", Icons.Filled.Settings, Icons.Outlined.Settings),')
+            if "BottomNavItem(Screen.Invoices" not in n:
+                out.append('    BottomNavItem(Screen.Invoices, "الفواتير", Icons.Filled.Description, Icons.Outlined.Description),')
+    n = "\\n".join(out) + "\\n"
+nav.write_text(n)
