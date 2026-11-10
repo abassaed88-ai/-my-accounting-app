@@ -755,3 +755,69 @@ if "BottomNavItem(Screen.Currency" not in n or "BottomNavItem(Screen.Invoices" n
                 out.append('    BottomNavItem(Screen.Invoices, "الفواتير", Icons.Filled.Description, Icons.Outlined.Description),')
     n = "\n".join(out) + "\n"
 nav.write_text(n)
+
+
+# Good Girl app identity and launcher icon (including Android 8+ adaptive icon).
+res = Path("inventra/app/src/main/res")
+values = res / "values"
+values.mkdir(parents=True, exist_ok=True)
+strings = values / "strings.xml"
+if strings.exists():
+    st = strings.read_text()
+    st = re.sub(r'(<string name="app_name">).*?(</string>)', r'\\1Good Girl\\2', st)
+    strings.write_text(st)
+else:
+    strings.write_text('<?xml version="1.0" encoding="utf-8"?>\\n<resources><string name="app_name">Good Girl</string></resources>\\n')
+
+# Keep the dashboard's visible brand consistent with the launcher name.
+dashboard = Path("inventra/app/src/main/java/com/inventra/app/presentation/dashboard/DashboardScreen.kt")
+if dashboard.exists():
+    d = dashboard.read_text().replace('"محاسبة متجري"', '"Good Girl"')
+    dashboard.write_text(d)
+
+(res / "color").mkdir(parents=True, exist_ok=True)
+(res / "color" / "goodgirl_background.xml").write_text(
+    '<resources><color name="goodgirl_background">#A5005A</color></resources>')
+
+vector = '''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M38,34 L70,34 L76,44 L76,78 Q76,84 70,84 L38,84 Q32,84 32,78 L32,44 Z"/>
+    <path android:fillColor="#FFA5005A" android:pathData="M44,40 L64,40 L68,47 L40,47 Z"/>
+    <path android:fillColor="#FFA5005A" android:pathData="M48,29 L60,29 L60,35 L48,35 Z"/>
+    <path android:fillColor="#FFA5005A" android:pathData="M52,22 L56,22 L56,30 L52,30 Z"/>
+    <path android:fillColor="#FFA5005A" android:pathData="M43,57 C43,51 48,48 54,48 C60,48 65,52 65,58 C65,64 60,68 54,68 C50,68 47,66 45,63 L51,63 C52,64 53,64 54,64 C58,64 60,61 60,58 C60,54 57,52 54,52 C50,52 48,54 48,58 L54,58 L54,62 L43,62 Z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M79,23 L82,31 L90,34 L82,37 L79,45 L76,37 L68,34 L76,31 Z"/>
+</vector>
+'''
+(res / "drawable").mkdir(parents=True, exist_ok=True)
+(res / "drawable" / "ic_goodgirl_foreground.xml").write_text(vector)
+
+# Legacy launcher fallback.
+(res / "mipmap").mkdir(parents=True, exist_ok=True)
+(res / "mipmap" / "ic_launcher.xml").write_text(vector)
+(res / "mipmap" / "ic_launcher_round.xml").write_text(vector)
+
+adaptive = res / "mipmap-anydpi-v26"
+adaptive.mkdir(parents=True, exist_ok=True)
+adaptive_xml = '''<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/goodgirl_background"/>
+    <foreground android:drawable="@drawable/ic_goodgirl_foreground"/>
+</adaptive-icon>
+'''
+(adaptive / "ic_launcher.xml").write_text(adaptive_xml)
+(adaptive / "ic_launcher_round.xml").write_text(adaptive_xml)
+
+manifest = Path("inventra/app/src/main/AndroidManifest.xml")
+if manifest.exists():
+    m = manifest.read_text()
+    m = re.sub(r'android:label="@string/app_name"', 'android:label="@string/app_name"', m)
+    if 'android:icon="@mipmap/ic_launcher"' not in m:
+        m = m.replace('<application', '<application\\n        android:icon="@mipmap/ic_launcher"')
+    if 'android:roundIcon=' not in m:
+        m = m.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/ic_launcher"\\n        android:roundIcon="@mipmap/ic_launcher_round"')
+    manifest.write_text(m)
+
+print("Good Girl branding and launcher icon resources generated.")
