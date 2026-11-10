@@ -178,4 +178,168 @@ if "database: InventraDatabase" not in d:
     raise RuntimeError("Could not inject database into repository provider")
 dbmodule.write_text(d)
 
+
+
+# Arabic-first colorful dashboard redesign.
+dashboard = root / "presentation/dashboard/DashboardScreen.kt"
+dashboard.write_text(r'''package com.inventra.app.presentation.dashboard
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddShoppingCart
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.inventra.app.domain.model.Product
+import com.inventra.app.domain.model.Sale
+import com.inventra.app.ui.components.formatCurrency
+import com.inventra.app.ui.components.formatQty
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private val Navy = Color(0xFF172554)
+private val Blue = Color(0xFF2563EB)
+private val Teal = Color(0xFF0F9D8A)
+private val Purple = Color(0xFF7C3AED)
+private val Orange = Color(0xFFEA8A22)
+private val Pale = Color(0xFFF4F7FC)
+
+@Composable
+fun DashboardScreen(onAddSale: () -> Unit, onStockIn: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val recentSales by viewModel.recentSales.collectAsStateWithLifecycle()
+    val lowStockProducts by viewModel.lowStockProducts.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.loadTodaySummary() }
+    val summary = uiState.todaySummary
+    Scaffold(containerColor = Pale, floatingActionButton = {
+        ExtendedFloatingActionButton(onClick = onAddSale, icon = { Icon(Icons.Default.AddShoppingCart, null) },
+            text = { Text("تسجيل مبيع جديد", fontWeight = FontWeight.Bold) },
+            containerColor = Blue, contentColor = Color.White)
+    }) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item {
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp),
+                    colors = CardDefaults.cardColors(containerColor = Navy)) {
+                    Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                        Text("محاسبة متجري", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(5.dp))
+                        Text(SimpleDateFormat("EEEE، d MMMM yyyy", Locale("ar")).format(Date()),
+                            color = Color.White.copy(alpha = .78f))
+                        Spacer(Modifier.height(18.dp))
+                        Text("إجمالي مبيعات اليوم", color = Color.White.copy(alpha = .85f))
+                        Text(formatCurrency(summary.totalRevenue), color = Color.White,
+                            style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    MetricCard("صافي الربح", formatCurrency(summary.totalProfit), Teal, Modifier.weight(1f))
+                    MetricCard("القطع المباعة", formatQty(summary.totalUnitsSold), Purple, Modifier.weight(1f))
+                }
+            }
+            item {
+                Text("الوصول السريع", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    QuickAction("تسجيل مبيع", "أدخل عملية بيع", Blue, Icons.Default.AddShoppingCart, onAddSale, Modifier.weight(1f))
+                    QuickAction("إدخال بضاعة", "تحديث المخزون", Orange, Icons.Default.Inventory2, onStockIn, Modifier.weight(1f))
+                }
+            }
+            if (lowStockProducts.isNotEmpty()) {
+                item { Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.WarningAmber, null, tint = Orange)
+                    Spacer(Modifier.width(7.dp))
+                    Text("تنبيهات المخزون", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
+                } }
+                items(lowStockProducts) { LowStockCard(it) }
+            }
+            item { Text("آخر المبيعات", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy) }
+            if (recentSales.isEmpty()) {
+                item {
+                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                        Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.TrendingUp, null, tint = Blue, modifier = Modifier.size(34.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("لا توجد مبيعات مسجلة بعد", fontWeight = FontWeight.Bold, color = Navy)
+                            Text("ابدأ بتسجيل أول عملية بيع من الزر بالأسفل", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            } else { items(recentSales) { SaleCard(it) } }
+        }
+    }
+}
+
+@Composable
+private fun MetricCard(title: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Card(modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = color)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(title, color = Color.White.copy(alpha = .88f))
+            Spacer(Modifier.height(8.dp))
+            Text(value, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+        }
+    }
+}
+
+@Composable
+private fun QuickAction(title: String, subtitle: String, color: Color, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Card(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Box(Modifier.size(42.dp).background(color.copy(alpha = .12f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = color)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(title, color = Navy, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun LowStockCard(product: Product) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E8))) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.WarningAmber, null, tint = Orange)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(product.name, fontWeight = FontWeight.Bold, color = Navy)
+                Text("المتبقي: \${formatQty(product.currentStockQty)} \${product.unit}", color = Color.DarkGray, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaleCard(sale: Sale) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(sale.productName, color = Navy, fontWeight = FontWeight.Bold)
+                Text("\${formatQty(sale.quantity)} × \${formatCurrency(sale.sellingPricePerUnit)}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(formatCurrency(sale.totalRevenue), color = Navy, fontWeight = FontWeight.Bold)
+                Text("ربح \${formatCurrency(sale.profit)}", color = if (sale.profit >= 0) Teal else Color.Red, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+''')
+
 print("Customization completed: atomic stock/sale writes, validation, Arabic RTL locale, app branding and expanded Arabic labels.")
