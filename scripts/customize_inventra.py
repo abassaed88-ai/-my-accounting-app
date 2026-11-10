@@ -764,10 +764,10 @@ values.mkdir(parents=True, exist_ok=True)
 strings = values / "strings.xml"
 if strings.exists():
     st = strings.read_text()
-    st = re.sub(r'(<string name="app_name">).*?(</string>)', r'\\1Good Girl\\2', st)
+    st = re.sub(r'(<string name="app_name">).*?(</string>)', r'\1Good Girl\2', st)
     strings.write_text(st)
 else:
-    strings.write_text('<?xml version="1.0" encoding="utf-8"?>\\n<resources><string name="app_name">Good Girl</string></resources>\\n')
+    strings.write_text('<?xml version="1.0" encoding="utf-8"?>\n<resources><string name="app_name">Good Girl</string></resources>\n')
 
 # Keep the dashboard's visible brand consistent with the launcher name.
 dashboard = Path("inventra/app/src/main/java/com/inventra/app/presentation/dashboard/DashboardScreen.kt")
@@ -815,9 +815,9 @@ if manifest.exists():
     m = manifest.read_text()
     m = re.sub(r'android:label="@string/app_name"', 'android:label="@string/app_name"', m)
     if 'android:icon="@mipmap/ic_launcher"' not in m:
-        m = m.replace('<application', '<application\\n        android:icon="@mipmap/ic_launcher"')
+        m = m.replace('<application', '<application\n        android:icon="@mipmap/ic_launcher"')
     if 'android:roundIcon=' not in m:
-        m = m.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/ic_launcher"\\n        android:roundIcon="@mipmap/ic_launcher_round"')
+        m = m.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/ic_launcher"\n        android:roundIcon="@mipmap/ic_launcher_round"')
     manifest.write_text(m)
 
 print("Good Girl branding and launcher icon resources generated.")
