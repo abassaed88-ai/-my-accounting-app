@@ -461,7 +461,7 @@ analytics = root / "presentation/analytics/AnalyticsScreen.kt"
 a = analytics.read_text()
 if "import com.inventra.app.presentation.currency.dualCurrencyLabel" not in a:
     a = a.replace("import com.inventra.app.ui.components.formatCurrency",
-                  "import com.inventra.app.ui.components.formatCurrency\\nimport com.inventra.app.presentation.currency.dualCurrencyLabel")
+                  "import com.inventra.app.ui.components.formatCurrency\nimport com.inventra.app.presentation.currency.dualCurrencyLabel")
 for old, new in [
     ("formatCurrency(summary.totalRevenue)", "dualCurrencyLabel(summary.totalRevenue)"),
     ("formatCurrency(summary.totalProfit)", "dualCurrencyLabel(summary.totalProfit)"),
