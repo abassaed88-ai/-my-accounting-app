@@ -319,7 +319,7 @@ private fun LowStockCard(product: Product) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(product.name, fontWeight = FontWeight.Bold, color = Navy)
-                Text("المتبقي: \${formatQty(product.currentStockQty)} \${product.unit}", color = Color.DarkGray, style = MaterialTheme.typography.bodySmall)
+                Text("المتبقي: ${formatQty(product.currentStockQty)} ${product.unit}", color = Color.DarkGray, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -331,11 +331,11 @@ private fun SaleCard(sale: Sale) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(sale.productName, color = Navy, fontWeight = FontWeight.Bold)
-                Text("\${formatQty(sale.quantity)} × \${formatCurrency(sale.sellingPricePerUnit)}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                Text("${formatQty(sale.quantity)} × ${formatCurrency(sale.sellingPricePerUnit)}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(formatCurrency(sale.totalRevenue), color = Navy, fontWeight = FontWeight.Bold)
-                Text("ربح \${formatCurrency(sale.profit)}", color = if (sale.profit >= 0) Teal else Color.Red, style = MaterialTheme.typography.bodySmall)
+                Text("ربح ${formatCurrency(sale.profit)}", color = if (sale.profit >= 0) Teal else Color.Red, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -436,7 +436,7 @@ fun CurrencySettingsScreen() {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("السعر المعتمد حالياً", fontWeight = FontWeight.Bold)
                     if (rate > 0.0) {
-                        Text("1 دولار = \${DecimalFormat("#,##0.##").format(rate)} ليرة سورية", style = MaterialTheme.typography.titleMedium, color = Color(0xFF2563EB), fontWeight = FontWeight.Bold)
+                        Text("1 دولار = ${DecimalFormat("#,##0.##").format(rate)} ليرة سورية", style = MaterialTheme.typography.titleMedium, color = Color(0xFF2563EB), fontWeight = FontWeight.Bold)
                         Text("يمكنك تغييره في أي وقت، وسيُستخدم في عرض القيم المحوّلة.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                     } else Text("لم يتم تحديد سعر صرف بعد", color = Color(0xFFB45309))
                 }
