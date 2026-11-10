@@ -456,6 +456,24 @@ d = d.replace("formatCurrency(sale.totalRevenue)", "dualCurrencyLabel(sale.total
 d = d.replace("formatCurrency(sale.profit)", "dualCurrencyLabel(sale.profit)")
 dashboard.write_text(d)
 
+# Apply the selected USD/SYP display consistently to analytics totals and product rankings.
+analytics = root / "presentation/analytics/AnalyticsScreen.kt"
+a = analytics.read_text()
+if "import com.inventra.app.presentation.currency.dualCurrencyLabel" not in a:
+    a = a.replace("import com.inventra.app.ui.components.formatCurrency",
+                  "import com.inventra.app.ui.components.formatCurrency\\nimport com.inventra.app.presentation.currency.dualCurrencyLabel")
+for old, new in [
+    ("formatCurrency(summary.totalRevenue)", "dualCurrencyLabel(summary.totalRevenue)"),
+    ("formatCurrency(summary.totalProfit)", "dualCurrencyLabel(summary.totalProfit)"),
+    ("formatCurrency(summary.totalCost)", "dualCurrencyLabel(summary.totalCost)"),
+    ("formatCurrency(p.totalRevenue)", "dualCurrencyLabel(p.totalRevenue)"),
+    ("formatCurrency(p.totalProfit)", "dualCurrencyLabel(p.totalProfit)"),
+    ("formatCurrency(state.summary.totalRevenue)", "dualCurrencyLabel(state.summary.totalRevenue)"),
+    ("formatCurrency(state.summary.totalProfit)", "dualCurrencyLabel(state.summary.totalProfit)")
+]:
+    a = a.replace(old, new)
+analytics.write_text(a)
+
 nav = root / "presentation/navigation/NavGraph.kt"
 n = nav.read_text()
 n = n.replace("import androidx.compose.material.icons.filled.ShoppingBag", "import androidx.compose.material.icons.filled.ShoppingBag\nimport androidx.compose.material.icons.filled.Settings")
