@@ -145,4 +145,11 @@ for file in root.rglob("*.kt"):
         body = body.replace(old_text, new_text)
     file.write_text(body)
 
+
+dbmodule = Path("inventra/app/src/main/java/com/inventra/app/di/DatabaseModule.kt")
+d = dbmodule.read_text()
+d = d.replace("        saleDao: SaleDao\\n    ): InventraRepository = InventraRepository(productDao, categoryDao, stockPurchaseDao, saleDao)",
+              "        saleDao: SaleDao,\\n        database: InventraDatabase\\n    ): InventraRepository = InventraRepository(productDao, categoryDao, stockPurchaseDao, saleDao, database)")
+dbmodule.write_text(d)
+
 print("Customization completed: atomic stock/sale writes, validation, Arabic RTL locale, app name and core Arabic labels.")
