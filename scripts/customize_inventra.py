@@ -148,8 +148,13 @@ for file in root.rglob("*.kt"):
 
 dbmodule = Path("inventra/app/src/main/java/com/inventra/app/di/DatabaseModule.kt")
 d = dbmodule.read_text()
-d = d.replace("        saleDao: SaleDao\\n    ): InventraRepository = InventraRepository(productDao, categoryDao, stockPurchaseDao, saleDao)",
-              "        saleDao: SaleDao,\\n        database: InventraDatabase\\n    ): InventraRepository = InventraRepository(productDao, categoryDao, stockPurchaseDao, saleDao, database)")
+d = re.sub(
+    r"saleDao: SaleDao\\s*\\)\\s*:\\s*InventraRepository\\s*=\\s*InventraRepository\\(productDao, categoryDao, stockPurchaseDao, saleDao\\)",
+    "saleDao: SaleDao,\\n        database: InventraDatabase\\n    ): InventraRepository = InventraRepository(productDao, categoryDao, stockPurchaseDao, saleDao, database)",
+    d
+)
+if "database: InventraDatabase" not in d:
+    raise RuntimeError("Could not inject database into repository provider")
 dbmodule.write_text(d)
 
 print("Customization completed: atomic stock/sale writes, validation, Arabic RTL locale, app name and core Arabic labels.")
