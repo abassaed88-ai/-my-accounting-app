@@ -469,3 +469,185 @@ nav.write_text(n)
 print("Customization completed: Arabic colorful dashboard, manual USD/SYP exchange rate, dual currency display and Arabic RTL.")
 
 print("Customization completed: atomic stock/sale writes, validation, Arabic RTL locale, app branding and expanded Arabic labels.")
+
+
+# Simple Arabic invoice composer with PDF export and external sharing.
+invoice_dir = root / "presentation/invoices"
+invoice_dir.mkdir(parents=True, exist_ok=True)
+(invoice_dir / "InvoiceScreen.kt").write_text(r'''package com.inventra.app.presentation.invoices
+
+import android.content.Intent
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
+import android.widget.Toast
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun InvoiceScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var invoiceNumber by remember { mutableStateOf("INV-" + System.currentTimeMillis().toString().takeLast(6)) }
+    var customer by remember { mutableStateOf("") }
+    var details by remember { mutableStateOf("") }
+    var total by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    val date = remember { SimpleDateFormat("yyyy/MM/dd", Locale("ar")).format(Date()) }
+    fun invoiceText(): String = buildString {
+        appendLine("فاتورة مبيعات")
+        appendLine("رقم الفاتورة: $invoiceNumber")
+        appendLine("التاريخ: $date")
+        appendLine("اسم العميل: ${customer.ifBlank { "—" }}")
+        appendLine("------------------------------")
+        appendLine("تفاصيل الفاتورة:")
+        appendLine(details)
+        appendLine("------------------------------")
+        appendLine("الإجمالي: ${total.ifBlank { "0" }}")
+        if (notes.isNotBlank()) appendLine("ملاحظات: $notes")
+        appendLine("شكراً لتعاملكم معنا")
+    }
+    fun createPdf(): File {
+        val document = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+        val page = document.startPage(pageInfo)
+        val canvas = page.canvas
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(23, 37, 84)
+            textSize = 25f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.DKGRAY
+            textSize = 17f
+            textAlign = Paint.Align.RIGHT
+        }
+        var y = 80f
+        canvas.drawText("فاتورة مبيعات", 540f, y, titlePaint)
+        y += 48f
+        val lines = invoiceText().lines()
+        lines.drop(1).forEach { line ->
+            if (y > 790f) return@forEach
+            canvas.drawText(line.take(68), 540f, y, bodyPaint)
+            y += 31f
+        }
+        document.finishPage(page)
+        val folder = File(context.cacheDir, "invoices").apply { mkdirs() }
+        val file = File(folder, "invoice_${System.currentTimeMillis()}.pdf")
+        file.outputStream().use { document.writeTo(it) }
+        document.close()
+        return file
+    }
+    fun sharePdf() {
+        try {
+            val file = createPdf()
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(send, "إرسال الفاتورة"))
+        } catch (e: Exception) {
+            Toast.makeText(context, "تعذر إنشاء أو مشاركة الفاتورة: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("إنشاء فاتورة", fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع") } }
+            )
+        }
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(18.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("املأ البيانات ثم أنشئ ملف PDF أو انسخ نص الفاتورة.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(invoiceNumber, { invoiceNumber = it }, label = { Text("رقم الفاتورة") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(customer, { customer = it }, label = { Text("اسم العميل") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(date, {}, label = { Text("التاريخ") }, modifier = Modifier.fillMaxWidth(), readOnly = true)
+            OutlinedTextField(details, { details = it }, label = { Text("تفاصيل المواد والكميات والأسعار") }, modifier = Modifier.fillMaxWidth(), minLines = 5)
+            OutlinedTextField(total, { total = it }, label = { Text("الإجمالي") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+            OutlinedTextField(notes, { notes = it }, label = { Text("ملاحظات (اختياري)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Text("معاينة الفاتورة", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    Text(invoiceText())
+                }
+            }
+            Button(onClick = { sharePdf() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                Text("إنشاء PDF ومشاركة الفاتورة")
+            }
+            OutlinedButton(onClick = {
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("فاتورة", invoiceText()))
+                Toast.makeText(context, "تم نسخ نص الفاتورة", Toast.LENGTH_SHORT).show()
+            }, modifier = Modifier.fillMaxWidth()) { Text("نسخ نص الفاتورة") }
+        }
+    }
+}
+''')
+
+nav = root / "presentation/navigation/NavGraph.kt"
+n = nav.read_text()
+if "import com.inventra.app.presentation.invoices.InvoiceScreen" not in n:
+    n = n.replace("import com.inventra.app.presentation.stock.StockInScreen",
+                  "import com.inventra.app.presentation.stock.StockInScreen\\nimport com.inventra.app.presentation.invoices.InvoiceScreen")
+if 'object Invoices : Screen("invoices")' not in n:
+    n = n.replace('    object Inventory : Screen("inventory")',
+                  '    object Inventory : Screen("inventory")\\n    object Invoices : Screen("invoices")')
+if 'BottomNavItem(Screen.Invoices' not in n:
+    n = n.replace('    BottomNavItem(Screen.Inventory, "Inventory", Icons.Filled.Inventory, Icons.Outlined.Inventory),',
+                  '    BottomNavItem(Screen.Inventory, "Inventory", Icons.Filled.Inventory, Icons.Outlined.Inventory),\\n    BottomNavItem(Screen.Invoices, "الفواتير", Icons.Filled.Description, Icons.Outlined.Description),')
+if 'composable(Screen.Invoices.route)' not in n:
+    n = n.replace('            composable(Screen.Inventory.route) { InventoryScreen() }',
+                  '            composable(Screen.Inventory.route) { InventoryScreen() }\\n            composable(Screen.Invoices.route) { InvoiceScreen(onBack = { navController.popBackStack() }) }')
+n = n.replace("import androidx.compose.material.icons.filled.ShoppingBag",
+              "import androidx.compose.material.icons.filled.ShoppingBag\\nimport androidx.compose.material.icons.filled.Description")
+n = n.replace("import androidx.compose.material.icons.outlined.ShoppingBag",
+              "import androidx.compose.material.icons.outlined.ShoppingBag\\nimport androidx.compose.material.icons.outlined.Description")
+nav.write_text(n)
+
+manifest = Path("inventra/app/src/main/AndroidManifest.xml")
+m = manifest.read_text()
+if "androidx.core.content.FileProvider" not in m:
+    m = m.replace("    </application>", """        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>""")
+manifest.write_text(m)
+
+xml_dir = Path("inventra/app/src/main/res/xml")
+xml_dir.mkdir(parents=True, exist_ok=True)
+(xml_dir / "file_paths.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="invoice_cache" path="invoices/" />
+</paths>
+""")
