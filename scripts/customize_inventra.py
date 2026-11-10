@@ -512,6 +512,11 @@ fun InvoiceScreen(onBack: () -> Unit) {
     var notes by remember { mutableStateOf("") }
     val date = remember { SimpleDateFormat("yyyy/MM/dd", Locale("ar")).format(Date()) }
     val totalCurrencyLabel = dualCurrencyLabel(total.toDoubleOrNull() ?: 0.0)
+    var savedInvoices by remember { mutableStateOf(emptyList<File>()) }
+    LaunchedEffect(Unit) {
+        val folder = File(context.filesDir, "invoices")
+        savedInvoices = folder.listFiles()?.filter { it.extension.equals("pdf", true) }?.sortedByDescending { it.lastModified() } ?: emptyList()
+    }
     fun invoiceText(): String = buildString {
         appendLine("فاتورة مبيعات")
         appendLine("رقم الفاتورة: $invoiceNumber")
@@ -551,15 +556,14 @@ fun InvoiceScreen(onBack: () -> Unit) {
             y += 31f
         }
         document.finishPage(page)
-        val folder = File(context.cacheDir, "invoices").apply { mkdirs() }
+        val folder = File(context.filesDir, "invoices").apply { mkdirs() }
         val file = File(folder, "invoice_${System.currentTimeMillis()}.pdf")
         file.outputStream().use { document.writeTo(it) }
         document.close()
         return file
     }
-    fun sharePdf() {
+    fun sharePdf(file: File) {
         try {
-            val file = createPdf()
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
@@ -598,8 +602,27 @@ fun InvoiceScreen(onBack: () -> Unit) {
                     Text(invoiceText())
                 }
             }
-            Button(onClick = { sharePdf() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                Text("إنشاء PDF ومشاركة الفاتورة")
+            Button(onClick = {
+                try {
+                    val file = createPdf()
+                    savedInvoices = listOf(file) + savedInvoices
+                    sharePdf(file)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "تعذر حفظ الفاتورة: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                Text("حفظ الفاتورة PDF ومشاركتها")
+            }
+            if (savedInvoices.isNotEmpty()) {
+                Text("الفواتير المحفوظة على الجهاز", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                savedInvoices.forEach { file ->
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(file.nameWithoutExtension, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { sharePdf(file) }) { Text("مشاركة") }
+                        }
+                    }
+                }
             }
             OutlinedButton(onClick = {
                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -650,6 +673,6 @@ xml_dir = Path("inventra/app/src/main/res/xml")
 xml_dir.mkdir(parents=True, exist_ok=True)
 (xml_dir / "file_paths.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <cache-path name="invoice_cache" path="invoices/" />
+    <files-path name="invoice_files" path="invoices/" />
 </paths>
 """)
