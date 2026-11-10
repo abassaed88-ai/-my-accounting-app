@@ -821,3 +821,56 @@ if manifest.exists():
     manifest.write_text(m)
 
 print("Good Girl branding and launcher icon resources generated.")
+
+
+# Restore deleted sales at their historical cost and keep the stock update atomic.
+repo_text = repo.read_text()
+old_delete = """    suspend fun deleteSale(sale: SaleEntity) {
+        // Restore stock quantity when a sale is deleted; avg cost is unchanged
+        val product = productDao.getProductById(sale.productId) ?: return
+        productDao.updateStockStats(sale.productId, product.currentStockQty + sale.quantity, product.currentAvgCost)
+        saleDao.deleteSale(sale)
+    }"""
+new_delete = """    suspend fun deleteSale(sale: SaleEntity) {
+        database.withTransaction {
+            val product = productDao.getProductById(sale.productId) ?: return@withTransaction
+            val restoredQty = product.currentStockQty + sale.quantity
+            val restoredValue = product.currentStockQty * product.currentAvgCost +
+                sale.quantity * sale.avgCostAtSale
+            val restoredAvgCost = if (restoredQty > 0.0) restoredValue / restoredQty else 0.0
+            productDao.updateStockStats(sale.productId, restoredQty, restoredAvgCost)
+            saleDao.deleteSale(sale)
+        }
+    }"""
+if old_delete in repo_text:
+    repo_text = repo_text.replace(old_delete, new_delete)
+else:
+    raise RuntimeError("Expected upstream deleteSale implementation not found")
+repo.write_text(repo_text)
+
+# Configure FileProvider so generated invoice PDFs can actually be shared.
+res_root = Path("inventra/app/src/main/res")
+xml_dir = res_root / "xml"
+xml_dir.mkdir(parents=True, exist_ok=True)
+(xml_dir / "file_paths.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="invoice_files" path="invoices/" />
+</paths>
+""")
+manifest = Path("inventra/app/src/main/AndroidManifest.xml")
+m = manifest.read_text()
+if "androidx.core.content.FileProvider" not in m:
+    provider = '''
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+'''
+    m = m.replace("    </application>", provider + "    </application>")
+manifest.write_text(m)
+print("Invoice PDF sharing configured and historical-cost sale deletion made atomic.")
