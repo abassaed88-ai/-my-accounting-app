@@ -577,8 +577,8 @@ fun InvoiceScreen(onBack: () -> Unit, viewModel: InvoiceViewModel = hiltViewMode
         selected.forEachIndexed { index, sale ->
             out.append(index + 1).append(") ").append(sale.productName)
                 .append("\nالكمية: ").append(sale.quantity).append(" ").append(sale.productUnit)
-                .append("\nسعر الوحدة: ").append(dualCurrencyLabel(sale.sellingPricePerUnit))
-                .append("\nالإجمالي: ").append(dualCurrencyLabel(sale.totalRevenue))
+                .append("\nسعر الوحدة: $").append(String.format(Locale.US, "%,.2f", sale.sellingPricePerUnit))
+                .append("\nالإجمالي: $").append(String.format(Locale.US, "%,.2f", sale.totalRevenue))
                 .append("\nرقم سجل المبيع: ").append(sale.id)
                 .append("\n--------------------------------\n")
         }
