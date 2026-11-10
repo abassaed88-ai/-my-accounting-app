@@ -137,7 +137,30 @@ translations = {
     '"Add products and stock to see your inventory"':'"أضف المواد والبضاعة لعرض المخزون"',
     '"Name *"':'"اسم المادة *"', '"Category"':'"التصنيف"',
     '"Product Code"':'"رمز المادة"', '"Unit"':'"وحدة القياس"',
-    '"Save Changes"':'"حفظ التعديلات"'
+    '"Save Changes"':'"حفظ التعديلات"',
+    '"Sales History"':'"سجل المبيعات"',
+    '"No sales recorded yet"':'"لم تُسجّل أي مبيعات بعد"',
+    '"Tap + to record your first sale"':'"اضغط + لتسجيل أول مبيع"',
+    '"Only ${formatQty(product.currentStockQty)} ${product.unit}(s) left"':'"المتبقي: ${formatQty(product.currentStockQty)} ${product.unit}"',
+    '"Revenue: ${formatCurrency(dayRevenue)}  ·  Profit: ${formatCurrency(dayProfit)}"':'"المبيعات: ${formatCurrency(dayRevenue)}  ·  الربح: ${formatCurrency(dayProfit)}"',
+    '"Inventra"':'"محاسبة متجري"',
+    '"Actions"':'"إجراءات"',
+    '"Sales"':'"المبيعات"',
+    '"Purchases"':'"المشتريات"',
+    '"Expenses"':'"المصاريف"',
+    '"Debts"':'"الديون"',
+    '"Search"':'"بحث"',
+    '"Cancel"':'"إلغاء"',
+    '"Delete"':'"حذف"',
+    '"Confirm"':'"تأكيد"',
+    '"Save"':'"حفظ"',
+    '"Back"':'"رجوع"',
+    '"Settings"':'"الإعدادات"',
+    '"All"':'"الكل"',
+    '"Date"':'"التاريخ"',
+    '"Cost"':'"التكلفة"',
+    '"Price"':'"السعر"',
+    '"Total"':'"الإجمالي"'
 }
 for file in root.rglob("*.kt"):
     body = file.read_text()
@@ -155,4 +178,4 @@ if "database: InventraDatabase" not in d:
     raise RuntimeError("Could not inject database into repository provider")
 dbmodule.write_text(d)
 
-print("Customization completed: atomic stock/sale writes, validation, Arabic RTL locale, app name and core Arabic labels.")
+print("Customization completed: atomic stock/sale writes, validation, Arabic RTL locale, app branding and expanded Arabic labels.")
