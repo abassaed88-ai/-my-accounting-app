@@ -519,7 +519,7 @@ fun InvoiceScreen(onBack: () -> Unit) {
         appendLine("تفاصيل الفاتورة:")
         appendLine(details)
         appendLine("------------------------------")
-        appendLine("الإجمالي: ${total.ifBlank { "0" }}")
+        appendLine("الإجمالي: $totalCurrencyLabel")
         if (notes.isNotBlank()) appendLine("ملاحظات: $notes")
         appendLine("شكراً لتعاملكم معنا")
     }
