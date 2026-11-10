@@ -499,6 +499,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.inventra.app.presentation.currency.dualCurrencyLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -510,6 +511,7 @@ fun InvoiceScreen(onBack: () -> Unit) {
     var total by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     val date = remember { SimpleDateFormat("yyyy/MM/dd", Locale("ar")).format(Date()) }
+    val totalCurrencyLabel = dualCurrencyLabel(total.toDoubleOrNull() ?: 0.0)
     fun invoiceText(): String = buildString {
         appendLine("فاتورة مبيعات")
         appendLine("رقم الفاتورة: $invoiceNumber")
