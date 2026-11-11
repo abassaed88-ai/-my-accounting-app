@@ -1460,3 +1460,61 @@ private fun InvoiceProductRow(product: Product, quantity: String, onQuantity: (S
 ''')
 
 print("Original invoice persistence, Room migration, transactional multi-line sale/stock updates, and invoice-entry UI generated.")
+
+
+
+# Party settlements: later customer receipts and supplier payments update both debt and cash.
+repo_file = root / "data/repository/InventraRepository.kt"
+r = repo_file.read_text()
+if "suspend fun recordCustomerPayment(" not in r:
+    marker = "    // ── Products ─"
+    settlement_methods = '''
+    suspend fun customerOutstanding(partyName: String): Double =
+        (accountEntryDao.getCustomerDebtTotal(partyName) -
+            accountEntryDao.getCustomerPaymentsTotal(partyName)).coerceAtLeast(0.0)
+
+    suspend fun supplierOutstanding(partyName: String): Double =
+        (accountEntryDao.getSupplierDebtTotal(partyName) -
+            accountEntryDao.getSupplierPaymentsTotal(partyName)).coerceAtLeast(0.0)
+
+    suspend fun recordCustomerPayment(
+        customerName: String, amount: Double, date: Long, notes: String = ""
+    ): Result<Unit> {
+        if (customerName.isBlank() || !amount.isFinite() || amount <= 0.0)
+            return Result.failure(IllegalArgumentException("أدخل اسم العميل ومبلغاً صحيحاً"))
+        return database.withTransaction {
+            val outstanding = (accountEntryDao.getCustomerDebtTotal(customerName) -
+                accountEntryDao.getCustomerPaymentsTotal(customerName)).coerceAtLeast(0.0)
+            if (outstanding <= 0.0 || amount > outstanding)
+                return@withTransaction Result.failure(IllegalArgumentException("المبلغ أكبر من الدين المستحق أو لا يوجد دين"))
+            accountEntryDao.insert(AccountEntryEntity(
+                entryType = "RECEIVABLE_PAYMENT", partyName = customerName,
+                referenceId = UUID.randomUUID().toString(), amount = amount,
+                date = date, notes = notes.ifBlank { "تسديد من العميل" }
+            ))
+            Result.success(Unit)
+        }
+    }
+
+    suspend fun recordSupplierPayment(
+        supplierName: String, amount: Double, date: Long, notes: String = ""
+    ): Result<Unit> {
+        if (supplierName.isBlank() || !amount.isFinite() || amount <= 0.0)
+            return Result.failure(IllegalArgumentException("أدخل اسم المورد ومبلغاً صحيحاً"))
+        return database.withTransaction {
+            val outstanding = (accountEntryDao.getSupplierDebtTotal(supplierName) -
+                accountEntryDao.getSupplierPaymentsTotal(supplierName)).coerceAtLeast(0.0)
+            if (outstanding <= 0.0 || amount > outstanding)
+                return@withTransaction Result.failure(IllegalArgumentException("المبلغ أكبر من الدين المستحق أو لا يوجد دين"))
+            accountEntryDao.insert(AccountEntryEntity(
+                entryType = "PAYABLE_PAYMENT", partyName = supplierName,
+                referenceId = UUID.randomUUID().toString(), amount = amount,
+                date = date, notes = notes.ifBlank { "تسديد للمورد" }
+            ))
+            Result.success(Unit)
+        }
+    }
+
+'''
+    r = r.replace(marker, settlement_methods + marker)
+    repo_file.write_text(r)
