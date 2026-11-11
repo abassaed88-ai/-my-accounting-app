@@ -1088,6 +1088,10 @@ if "import com.inventra.app.data.local.dao.InvoiceDao" not in r:
             val expectedRevenue = lines.sumOf { it.quantity * it.sellingPricePerUnit }
             if (!expectedRevenue.isFinite() || paidAmount > expectedRevenue)
                 return@withTransaction Result.failure(IllegalArgumentException("المبلغ المدفوع أكبر من إجمالي الفاتورة أو الإجمالي غير صالح"))
+            if (paidAmount < expectedRevenue && customerName.isBlank())
+                return@withTransaction Result.failure(IllegalArgumentException("اسم العميل مطلوب عند وجود مبلغ متبقٍ"))
+            if (products.values.any { !it.currentAvgCost.isFinite() || it.currentAvgCost < 0.0 })
+                return@withTransaction Result.failure(IllegalArgumentException("كلفة إحدى المواد غير صالحة"))
 
             val invoiceId = UUID.randomUUID().toString()
             val lineEntities = mutableListOf<InvoiceLineEntity>()
