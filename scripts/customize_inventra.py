@@ -886,9 +886,10 @@ dao_dir.mkdir(parents=True, exist_ok=True)
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.Index
 import java.util.UUID
 
-@Entity(tableName = "invoices")
+@Entity(tableName = "invoices", indices = [Index(value = ["invoiceNumber"], unique = true)])
 data class InvoiceEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val invoiceNumber: String,
@@ -962,6 +963,9 @@ interface InvoiceDao {
 
     @Query("SELECT * FROM invoices WHERE id = :id LIMIT 1")
     suspend fun getInvoice(id: String): InvoiceEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM invoices WHERE invoiceNumber = :number)")
+    suspend fun invoiceNumberExists(number: String): Boolean
 }
 ''')
 
@@ -1007,6 +1011,7 @@ if "MIGRATION_1_2" not in d:
                     saleId TEXT NOT NULL,
                     FOREIGN KEY(invoiceId) REFERENCES invoices(id) ON UPDATE NO ACTION ON DELETE CASCADE
                 )""")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_invoices_invoiceNumber ON invoices(invoiceNumber)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_invoice_lines_invoiceId ON invoice_lines(invoiceId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_invoice_lines_productId ON invoice_lines(productId)")
             }
@@ -1064,6 +1069,8 @@ if "import com.inventra.app.data.local.dao.InvoiceDao" not in r:
         if (!paidAmount.isFinite() || paidAmount < 0.0)
             return Result.failure(IllegalArgumentException("المبلغ المدفوع غير صالح"))
         return database.withTransaction {
+            if (invoiceDao.invoiceNumberExists(invoiceNumber))
+                return@withTransaction Result.failure(IllegalArgumentException("رقم الفاتورة مستخدم مسبقاً"))
             val grouped = lines.groupBy { it.productId }
             val products = mutableMapOf<String, ProductEntity>()
             for ((productId, productLines) in grouped) {
@@ -1179,10 +1186,14 @@ class InvoiceViewModel @Inject constructor(
     fun save(number: String, customer: String, paid: Double, date: Long, notes: String,
              lines: List<InventraRepository.InvoiceLineDraft>) {
         viewModelScope.launch {
-            repository.createSalesInvoice(number, customer, paid, date, notes, lines).fold(
-                onSuccess = { _result.value = InvoiceSaveResult.Success(it) },
-                onFailure = { _result.value = InvoiceSaveResult.Error(it.message ?: "تعذر حفظ الفاتورة") }
-            )
+            try {
+                repository.createSalesInvoice(number, customer, paid, date, notes, lines).fold(
+                    onSuccess = { _result.value = InvoiceSaveResult.Success(it) },
+                    onFailure = { _result.value = InvoiceSaveResult.Error(it.message ?: "تعذر حفظ الفاتورة") }
+                )
+            } catch (error: Exception) {
+                _result.value = InvoiceSaveResult.Error(error.message ?: "تعذر حفظ الفاتورة")
+            }
         }
     }
     fun reset() { _result.value = InvoiceSaveResult.Idle }
