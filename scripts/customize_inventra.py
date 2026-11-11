@@ -1531,3 +1531,154 @@ repo_file.write_text(r)
 
 
 
+
+
+# Accounting hardening: shared validated math, atomic reversals, real unit tests,
+# and calendar-aligned reporting periods. This block is intentionally idempotent.
+math_file = root / "domain/model/InventoryMath.kt"
+math_file.write_text("""package com.inventra.app.domain.model
+
+data class SaleAmounts(
+    val revenue: Double,
+    val cost: Double,
+    val profit: Double
+)
+
+object InventoryMath {
+    fun weightedAverageCost(
+        currentQty: Double,
+        currentAvgCost: Double,
+        incomingQty: Double,
+        incomingUnitCost: Double
+    ): Double {
+        require(currentQty.isFinite() && currentQty >= 0.0) { "الكمية الحالية غير صالحة" }
+        require(currentAvgCost.isFinite() && currentAvgCost >= 0.0) { "متوسط التكلفة غير صالح" }
+        require(incomingQty.isFinite() && incomingQty > 0.0) { "الكمية الواردة يجب أن تكون أكبر من صفر" }
+        require(incomingUnitCost.isFinite() && incomingUnitCost >= 0.0) { "تكلفة الوحدة غير صالحة" }
+        val totalQty = currentQty + incomingQty
+        val totalValue = currentQty * currentAvgCost + incomingQty * incomingUnitCost
+        require(totalQty.isFinite() && totalQty > 0.0 && totalValue.isFinite()) { "قيمة المخزون تتجاوز الحدود المسموحة" }
+        val result = totalValue / totalQty
+        require(result.isFinite() && result >= 0.0) { "تعذر حساب متوسط التكلفة" }
+        return result
+    }
+
+    fun saleAmounts(quantity: Double, sellingPrice: Double, averageCost: Double): SaleAmounts {
+        require(quantity.isFinite() && quantity > 0.0) { "الكمية يجب أن تكون أكبر من صفر" }
+        require(sellingPrice.isFinite() && sellingPrice >= 0.0) { "سعر البيع غير صالح" }
+        require(averageCost.isFinite() && averageCost >= 0.0) { "متوسط التكلفة غير صالح" }
+        val revenue = quantity * sellingPrice
+        val cost = quantity * averageCost
+        val profit = revenue - cost
+        require(revenue.isFinite() && cost.isFinite() && profit.isFinite()) { "قيمة العملية تتجاوز الحدود المسموحة" }
+        return SaleAmounts(revenue, cost, profit)
+    }
+}
+""")
+
+test_dir = Path("inventra/app/src/test/java/com/inventra/app/domain/model")
+test_dir.mkdir(parents=True, exist_ok=True)
+(test_dir / "InventoryMathTest.kt").write_text("""package com.inventra.app.domain.model
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Test
+
+class InventoryMathTest {
+    @Test fun weightedAverageUsesExistingAndIncomingStock() {
+        assertEquals(14.0, InventoryMath.weightedAverageCost(10.0, 10.0, 10.0, 18.0), 0.000001)
+    }
+
+    @Test fun firstPurchaseSetsCost() {
+        assertEquals(7.5, InventoryMath.weightedAverageCost(0.0, 0.0, 4.0, 7.5), 0.000001)
+    }
+
+    @Test fun saleSnapshotsRevenueCostAndProfit() {
+        val result = InventoryMath.saleAmounts(3.0, 20.0, 12.0)
+        assertEquals(60.0, result.revenue, 0.000001)
+        assertEquals(36.0, result.cost, 0.000001)
+        assertEquals(24.0, result.profit, 0.000001)
+    }
+
+    @Test fun rejectsZeroOrNegativePurchaseQuantity() {
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryMath.weightedAverageCost(5.0, 2.0, 0.0, 3.0)
+        }
+    }
+
+    @Test fun rejectsNegativeSaleQuantity() {
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryMath.saleAmounts(-1.0, 10.0, 5.0)
+        }
+    }
+
+    @Test fun rejectsNonFiniteAmounts() {
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryMath.saleAmounts(Double.MAX_VALUE, 2.0, 1.0)
+        }
+    }
+
+    @Test fun historicalSaleValuesRemainIndependentOfLaterCost() {
+        val firstSale = InventoryMath.saleAmounts(2.0, 15.0, 8.0)
+        val laterAverageCost = InventoryMath.weightedAverageCost(8.0, 8.0, 8.0, 20.0)
+        assertEquals(14.0, laterAverageCost, 0.000001)
+        assertEquals(14.0, firstSale.profit, 0.000001)
+    }
+}
+""")
+
+# Use the tested calculation helpers in actual stock and sale posting.
+repo_file = root / "data/repository/InventraRepository.kt"
+r = repo_file.read_text()
+if "import com.inventra.app.domain.model.InventoryMath" not in r:
+    r = r.replace("import com.inventra.app.domain.model.InventoryItem",
+                  "import com.inventra.app.domain.model.InventoryItem\nimport com.inventra.app.domain.model.InventoryMath")
+r = r.replace(
+    "val existingValue = product.currentStockQty * product.currentAvgCost\n            val newQty = product.currentStockQty + purchase.quantity\n            val newAvgCost = (existingValue + purchase.quantity * purchase.costPerUnit) / newQty",
+    "val newQty = product.currentStockQty + purchase.quantity\n            if (!newQty.isFinite()) return@withTransaction Result.failure(IllegalArgumentException(\"كمية المخزون تتجاوز الحدود المسموحة\"))\n            val newAvgCost = try { InventoryMath.weightedAverageCost(product.currentStockQty, product.currentAvgCost, purchase.quantity, purchase.costPerUnit) } catch (error: IllegalArgumentException) { return@withTransaction Result.failure(error) }"
+)
+r = r.replace(
+    "val totalRevenue = quantity * sellingPricePerUnit\n            val avgCost = product.currentAvgCost\n            val totalCost = quantity * avgCost\n            val profit = totalRevenue - totalCost",
+    "val avgCost = product.currentAvgCost\n            val amounts = try { InventoryMath.saleAmounts(quantity, sellingPricePerUnit, avgCost) } catch (error: IllegalArgumentException) { return@withTransaction Result.failure(error) }\n            val totalRevenue = amounts.revenue\n            val totalCost = amounts.cost\n            val profit = amounts.profit"
+)
+# Undo a sale and restore its stock in one transaction, so neither half can be committed alone.
+start = r.index("    suspend fun deleteSale(")
+end = r.index("\n    fun getRecentSales", start)
+r = r[:start] + """    suspend fun deleteSale(sale: SaleEntity) {
+        database.withTransaction {
+            val product = productDao.getProductById(sale.productId)
+                ?: throw IllegalStateException("المادة المرتبطة بالمبيع غير موجودة")
+            val restoredQty = product.currentStockQty + sale.quantity
+            require(restoredQty.isFinite()) { "كمية المخزون بعد الإلغاء غير صالحة" }
+            productDao.updateStockStats(sale.productId, restoredQty, product.currentAvgCost)
+            saleDao.deleteSale(sale)
+        }
+    }
+""" + r[end:]
+repo_file.write_text(r)
+
+# Align weekly, monthly and yearly reports to calendar periods, not rolling 7/30/365-day windows.
+analytics_vm = root / "presentation/analytics/AnalyticsViewModel.kt"
+a = analytics_vm.read_text()
+a = a.replace("            AnalyticsPeriod.WEEK -> cal.add(Calendar.DAY_OF_YEAR, -6)\n            AnalyticsPeriod.MONTH -> cal.add(Calendar.DAY_OF_YEAR, -29)\n            AnalyticsPeriod.YEAR -> cal.add(Calendar.YEAR, -1)",
+"""            AnalyticsPeriod.WEEK -> {
+                cal.setFirstDayOfWeek(Calendar.MONDAY)
+                cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            }
+            AnalyticsPeriod.MONTH -> cal.set(Calendar.DAY_OF_MONTH, 1)
+            AnalyticsPeriod.YEAR -> cal.set(Calendar.DAY_OF_YEAR, 1)""")
+analytics_vm.write_text(a)
+
+# SQLite daily grouping must use the device's local calendar, matching report boundaries.
+sale_dao = root / "data/local/dao/SaleDao.kt"
+sd = sale_dao.read_text().replace("date / 1000, 'unixepoch') AS day", "date / 1000, 'unixepoch', 'localtime') AS day")
+sale_dao.write_text(sd)
+
+# Add JUnit to the app's JVM test configuration.
+gradle_file = Path("inventra/app/build.gradle.kts")
+g = gradle_file.read_text()
+if 'testImplementation("junit:junit:4.13.2")' not in g:
+    g = g.replace("dependencies {", 'dependencies {\n    testImplementation("junit:junit:4.13.2")')
+gradle_file.write_text(g)
+
+print("Accounting hardening and seven JVM unit tests added.")
