@@ -193,7 +193,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.TrendingUp
-import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -215,7 +215,7 @@ private val Navy = Color(0xFF172554)
 private val Blue = Color(0xFF2563EB)
 private val Teal = Color(0xFF0F9D8A)
 private val Purple = Color(0xFF7C3AED)
-private val Orange = Color(0xFFEA8A22)
+private val AccentPink = Color(0xFFC2186A)
 private val Pale = Color(0xFFF4F7FC)
 
 @Composable
@@ -258,12 +258,12 @@ fun DashboardScreen(onAddSale: () -> Unit, onStockIn: () -> Unit, viewModel: Das
                 Text("الوصول السريع", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     QuickAction("تسجيل مبيع", "أدخل عملية بيع", Blue, Icons.Default.AddShoppingCart, onAddSale, Modifier.weight(1f))
-                    QuickAction("إدخال بضاعة", "تحديث المخزون", Orange, Icons.Default.Inventory2, onStockIn, Modifier.weight(1f))
+                    QuickAction("إدخال بضاعة", "تحديث المخزون", AccentPink, Icons.Default.Inventory2, onStockIn, Modifier.weight(1f))
                 }
             }
             if (lowStockProducts.isNotEmpty()) {
                 item { Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.WarningAmber, null, tint = Orange)
+                    Icon(Icons.Default.Warning, null, tint = AccentPink)
                     Spacer(Modifier.width(7.dp))
                     Text("تنبيهات المخزون", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
                 } }
