@@ -847,6 +847,9 @@ data class AccountEntryEntity(
 )
 ''')
 
+dao_dir = root / "data/local/dao"
+dao_dir.mkdir(parents=True, exist_ok=True)
+
 (dao_dir / "AccountEntryDao.kt").write_text(r'''package com.inventra.app.data.local.dao
 
 import androidx.room.Dao
