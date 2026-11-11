@@ -313,7 +313,7 @@ private fun QuickAction(title: String, subtitle: String, color: Color, icon: and
 
 @Composable
 private fun LowStockCard(product: Product) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E8))) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFECF5))) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Warning, null, tint = AccentPink)
             Spacer(Modifier.width(10.dp))
