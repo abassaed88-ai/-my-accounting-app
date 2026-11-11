@@ -823,6 +823,160 @@ if manifest.exists():
 print("Good Girl branding and launcher icon resources generated.")
 
 
+# Unified accounting journal: cash movements and customer/supplier balances.
+ledger_entity = root / "data/local/entity/AccountEntryEntity.kt"
+ledger_entity.write_text(r'''package com.inventra.app.data.local.entity
+
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.PrimaryKey
+import java.util.UUID
+
+@Entity(
+    tableName = "account_entries",
+    indices = [Index("date"), Index("partyName"), Index("referenceId"), Index("entryType")]
+)
+data class AccountEntryEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val entryType: String,
+    val partyName: String = "",
+    val referenceId: String = "",
+    val amount: Double,
+    val date: Long = System.currentTimeMillis(),
+    val notes: String = ""
+)
+''')
+
+(dao_dir / "AccountEntryDao.kt").write_text(r'''package com.inventra.app.data.local.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import com.inventra.app.data.local.entity.AccountEntryEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface AccountEntryDao {
+    @Insert
+    suspend fun insert(entry: AccountEntryEntity)
+
+    @Insert
+    suspend fun insertAll(entries: List<AccountEntryEntity>)
+
+    @Query("SELECT * FROM account_entries ORDER BY date DESC")
+    fun observeAll(): Flow<List<AccountEntryEntity>>
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM account_entries WHERE entryType IN ('CASH_IN','RECEIVABLE_PAYMENT','PAYABLE_REFUND')")
+    suspend fun getCashInTotal(): Double
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM account_entries WHERE entryType IN ('CASH_OUT','PAYABLE_PAYMENT','RECEIVABLE_REFUND')")
+    suspend fun getCashOutTotal(): Double
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM account_entries WHERE entryType IN ('RECEIVABLE','RECEIVABLE_ADJUSTMENT') AND partyName = :party")
+    suspend fun getCustomerDebtTotal(party: String): Double
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM account_entries WHERE entryType = 'RECEIVABLE_PAYMENT' AND partyName = :party")
+    suspend fun getCustomerPaymentsTotal(party: String): Double
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM account_entries WHERE entryType IN ('PAYABLE','PAYABLE_ADJUSTMENT') AND partyName = :party")
+    suspend fun getSupplierDebtTotal(party: String): Double
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM account_entries WHERE entryType = 'PAYABLE_PAYMENT' AND partyName = :party")
+    suspend fun getSupplierPaymentsTotal(party: String): Double
+
+    @Query("SELECT EXISTS(SELECT 1 FROM account_entries WHERE referenceId = :reference AND entryType = :type)")
+    suspend fun existsForReference(reference: String, type: String): Boolean
+}
+''')
+
+# Room schema v3 adds a journal without altering or deleting existing rows.
+db = root / "data/local/InventraDatabase.kt"
+d = db.read_text()
+if "AccountEntryEntity::class" not in d:
+    d = d.replace("import com.inventra.app.data.local.entity.InvoiceLineEntity",
+                  "import com.inventra.app.data.local.entity.InvoiceLineEntity\nimport com.inventra.app.data.local.entity.AccountEntryEntity\nimport com.inventra.app.data.local.dao.AccountEntryDao")
+    d = d.replace("        InvoiceLineEntity::class", "        InvoiceLineEntity::class,\n        AccountEntryEntity::class")
+    d = d.replace("version = 2,", "version = 3,")
+    d = d.replace("    abstract fun invoiceDao(): InvoiceDao",
+                  "    abstract fun invoiceDao(): InvoiceDao\n    abstract fun accountEntryDao(): AccountEntryDao")
+if "MIGRATION_2_3" not in d:
+    d = d.replace("        const val DATABASE_NAME", """        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(\"\"\"CREATE TABLE IF NOT EXISTS account_entries (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    entryType TEXT NOT NULL,
+                    partyName TEXT NOT NULL,
+                    referenceId TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    date INTEGER NOT NULL,
+                    notes TEXT NOT NULL
+                )\"\"\")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_account_entries_date ON account_entries(date)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_account_entries_partyName ON account_entries(partyName)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_account_entries_referenceId ON account_entries(referenceId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_account_entries_entryType ON account_entries(entryType)")
+            }
+        }
+        const val DATABASE_NAME""")
+db.write_text(d)
+
+# Register migration and DAO provider.
+module = Path("inventra/app/src/main/java/com/inventra/app/di/DatabaseModule.kt")
+m = module.read_text()
+m = m.replace(".addMigrations(InventraDatabase.MIGRATION_1_2)",
+              ".addMigrations(InventraDatabase.MIGRATION_1_2, InventraDatabase.MIGRATION_2_3)")
+if "AccountEntryDao" not in m:
+    m = m.replace("import com.inventra.app.data.local.dao.InvoiceDao",
+                  "import com.inventra.app.data.local.dao.InvoiceDao\nimport com.inventra.app.data.local.dao.AccountEntryDao")
+    m = m.replace("    @Provides fun provideInvoiceDao(db: InventraDatabase): InvoiceDao = db.invoiceDao()",
+                  "    @Provides fun provideInvoiceDao(db: InventraDatabase): InvoiceDao = db.invoiceDao()\n    @Provides fun provideAccountEntryDao(db: InventraDatabase): AccountEntryDao = db.accountEntryDao()")
+    m = m.replace("        invoiceDao: InvoiceDao,",
+                  "        invoiceDao: InvoiceDao,\n        accountEntryDao: AccountEntryDao,")
+    m = m.replace("saleDao, database, invoiceDao)",
+                  "saleDao, database, invoiceDao, accountEntryDao)")
+module.write_text(m)
+
+# Add the journal dependency and atomically post receipts and customer receivables.
+repo_file = root / "data/repository/InventraRepository.kt"
+r = repo_file.read_text()
+if "private val accountEntryDao: AccountEntryDao" not in r:
+    r = r.replace("import com.inventra.app.data.local.dao.InvoiceDao",
+                  "import com.inventra.app.data.local.dao.InvoiceDao\nimport com.inventra.app.data.local.dao.AccountEntryDao")
+    r = r.replace("import com.inventra.app.data.local.entity.InvoiceLineEntity",
+                  "import com.inventra.app.data.local.entity.InvoiceLineEntity\nimport com.inventra.app.data.local.entity.AccountEntryEntity")
+    r = r.replace("    private val invoiceDao: InvoiceDao\n)",
+                  "    private val invoiceDao: InvoiceDao,\n    private val accountEntryDao: AccountEntryDao\n)")
+needle = "            invoiceDao.insertLines(lineEntities)\n"
+posting = """            invoiceDao.insertLines(lineEntities)
+            // Post the cash receipt and unpaid customer balance exactly once with the invoice.
+            if (paidAmount > 0.0) {
+                accountEntryDao.insert(AccountEntryEntity(
+                    entryType = "CASH_IN",
+                    partyName = customerName,
+                    referenceId = invoiceId,
+                    amount = paidAmount,
+                    date = date,
+                    notes = "قبض فاتورة مبيعات $invoiceNumber"
+                ))
+            }
+            val receivable = revenue - paidAmount
+            if (receivable > 0.0) {
+                accountEntryDao.insert(AccountEntryEntity(
+                    entryType = "RECEIVABLE",
+                    partyName = customerName,
+                    referenceId = invoiceId,
+                    amount = receivable,
+                    date = date,
+                    notes = "ذمة عميل عن فاتورة $invoiceNumber"
+                ))
+            }
+"""
+if needle in r and "قبض فاتورة مبيعات" not in r:
+    r = r.replace(needle, posting, 1)
+repo_file.write_text(r)
+
+
+
 # Restore deleted sales at their historical cost and keep the stock update atomic.
 repo_text = repo.read_text()
 old_delete = """    suspend fun deleteSale(sale: SaleEntity) {
