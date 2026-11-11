@@ -874,3 +874,422 @@ if "androidx.core.content.FileProvider" not in m:
     m = m.replace("    </application>", provider + "    </application>")
 manifest.write_text(m)
 print("Invoice PDF sharing configured and historical-cost sale deletion made atomic.")
+
+
+# Persistent original multi-item sales invoices (not PDFs assembled from past sales).
+entity_dir = root / "data/local/entity"
+dao_dir = root / "data/local/dao"
+entity_dir.mkdir(parents=True, exist_ok=True)
+dao_dir.mkdir(parents=True, exist_ok=True)
+
+(entity_dir / "InvoiceEntity.kt").write_text(r'''package com.inventra.app.data.local.entity
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+import java.util.UUID
+
+@Entity(tableName = "invoices")
+data class InvoiceEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val invoiceNumber: String,
+    val customerName: String = "",
+    val date: Long = System.currentTimeMillis(),
+    val totalRevenue: Double,
+    val totalCost: Double,
+    val totalProfit: Double,
+    val paidAmount: Double,
+    val remainingAmount: Double,
+    val notes: String = ""
+)
+''')
+
+(entity_dir / "InvoiceLineEntity.kt").write_text(r'''package com.inventra.app.data.local.entity
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+import java.util.UUID
+
+@Entity(
+    tableName = "invoice_lines",
+    foreignKeys = [ForeignKey(
+        entity = InvoiceEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["invoiceId"],
+        onDelete = ForeignKey.CASCADE
+    )],
+    indices = [Index("invoiceId"), Index("productId")]
+)
+data class InvoiceLineEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val invoiceId: String,
+    val productId: String,
+    val productNameSnapshot: String,
+    val unitSnapshot: String,
+    val quantity: Double,
+    val sellingPricePerUnit: Double,
+    val avgCostAtSale: Double,
+    val totalRevenue: Double,
+    val totalCost: Double,
+    val profit: Double,
+    val saleId: String
+)
+''')
+
+(dao_dir / "InvoiceDao.kt").write_text(r'''package com.inventra.app.data.local.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import com.inventra.app.data.local.entity.InvoiceEntity
+import com.inventra.app.data.local.entity.InvoiceLineEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface InvoiceDao {
+    @Insert
+    suspend fun insertInvoice(invoice: InvoiceEntity)
+
+    @Insert
+    suspend fun insertLines(lines: List<InvoiceLineEntity>)
+
+    @Query("SELECT * FROM invoices ORDER BY date DESC")
+    fun observeInvoices(): Flow<List<InvoiceEntity>>
+
+    @Query("SELECT * FROM invoice_lines WHERE invoiceId = :invoiceId ORDER BY rowid ASC")
+    suspend fun getLines(invoiceId: String): List<InvoiceLineEntity>
+
+    @Query("SELECT * FROM invoices WHERE id = :id LIMIT 1")
+    suspend fun getInvoice(id: String): InvoiceEntity?
+}
+''')
+
+# Add Room entities and a non-destructive 1 -> 2 migration.
+db = root / "data/local/InventraDatabase.kt"
+d = db.read_text()
+d = d.replace("import com.inventra.app.data.local.entity.SaleEntity",
+              "import com.inventra.app.data.local.entity.SaleEntity\nimport com.inventra.app.data.local.entity.InvoiceEntity\nimport com.inventra.app.data.local.entity.InvoiceLineEntity\nimport com.inventra.app.data.local.dao.InvoiceDao")
+d = d.replace("        SaleEntity::class",
+              "        SaleEntity::class,\n        InvoiceEntity::class,\n        InvoiceLineEntity::class")
+d = d.replace("version = 1,", "version = 2,")
+d = d.replace("    abstract fun saleDao(): SaleDao",
+              "    abstract fun saleDao(): SaleDao\n    abstract fun invoiceDao(): InvoiceDao")
+if "MIGRATION_1_2" not in d:
+    d = d.replace("    companion object {\n        const val DATABASE_NAME",
+'''    companion object {
+        val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS invoices (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    invoiceNumber TEXT NOT NULL,
+                    customerName TEXT NOT NULL,
+                    date INTEGER NOT NULL,
+                    totalRevenue REAL NOT NULL,
+                    totalCost REAL NOT NULL,
+                    totalProfit REAL NOT NULL,
+                    paidAmount REAL NOT NULL,
+                    remainingAmount REAL NOT NULL,
+                    notes TEXT NOT NULL
+                )""")
+                db.execSQL("""CREATE TABLE IF NOT EXISTS invoice_lines (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    invoiceId TEXT NOT NULL,
+                    productId TEXT NOT NULL,
+                    productNameSnapshot TEXT NOT NULL,
+                    unitSnapshot TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    sellingPricePerUnit REAL NOT NULL,
+                    avgCostAtSale REAL NOT NULL,
+                    totalRevenue REAL NOT NULL,
+                    totalCost REAL NOT NULL,
+                    profit REAL NOT NULL,
+                    saleId TEXT NOT NULL,
+                    FOREIGN KEY(invoiceId) REFERENCES invoices(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                )""")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_invoice_lines_invoiceId ON invoice_lines(invoiceId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_invoice_lines_productId ON invoice_lines(productId)")
+            }
+        }
+        const val DATABASE_NAME''')
+db.write_text(d)
+
+# Keep all existing data and register the explicit migration in Room.
+module = Path("inventra/app/src/main/java/com/inventra/app/di/DatabaseModule.kt")
+m = module.read_text()
+m = m.replace("            .build()",
+              "            .addMigrations(InventraDatabase.MIGRATION_1_2)\n            .build()")
+if "InvoiceDao" not in m:
+    m = m.replace("import com.inventra.app.data.local.dao.CategoryDao",
+                  "import com.inventra.app.data.local.dao.CategoryDao\nimport com.inventra.app.data.local.dao.InvoiceDao")
+    m = m.replace("    @Provides fun provideSaleDao(db: InventraDatabase): SaleDao = db.saleDao()",
+                  "    @Provides fun provideSaleDao(db: InventraDatabase): SaleDao = db.saleDao()\n    @Provides fun provideInvoiceDao(db: InventraDatabase): InvoiceDao = db.invoiceDao()")
+    m = m.replace("        saleDao: SaleDao,",
+                  "        saleDao: SaleDao,\n        invoiceDao: InvoiceDao,")
+    m = m.replace("InventraRepository(productDao, categoryDao, stockPurchaseDao, saleDao, database)",
+                  "InventraRepository(productDao, categoryDao, stockPurchaseDao, saleDao, database, invoiceDao)")
+module.write_text(m)
+
+# Transactionally create invoice, invoice lines, historical sale records and stock deductions.
+repo_file = root / "data/repository/InventraRepository.kt"
+r = repo_file.read_text()
+if "import com.inventra.app.data.local.dao.InvoiceDao" not in r:
+    r = r.replace("import com.inventra.app.data.local.dao.CategoryDao",
+                  "import com.inventra.app.data.local.dao.CategoryDao\nimport com.inventra.app.data.local.dao.InvoiceDao")
+    r = r.replace("import com.inventra.app.data.local.entity.CategoryEntity",
+                  "import com.inventra.app.data.local.entity.CategoryEntity\nimport com.inventra.app.data.local.entity.InvoiceEntity\nimport com.inventra.app.data.local.entity.InvoiceLineEntity")
+    r = r.replace("import java.util.Locale", "import java.util.Locale\nimport java.util.UUID")
+    r = r.replace("    private val database: InventraDatabase\n)",
+                  "    private val database: InventraDatabase,\n    private val invoiceDao: InvoiceDao\n)")
+    marker = "    // ── Products ─"
+    method = '''
+    data class InvoiceLineDraft(
+        val productId: String,
+        val quantity: Double,
+        val sellingPricePerUnit: Double
+    )
+
+    val invoices = invoiceDao.observeInvoices()
+
+    suspend fun createSalesInvoice(
+        invoiceNumber: String,
+        customerName: String,
+        paidAmount: Double,
+        date: Long,
+        notes: String,
+        lines: List<InvoiceLineDraft>
+    ): Result<String> {
+        if (invoiceNumber.isBlank()) return Result.failure(IllegalArgumentException("رقم الفاتورة مطلوب"))
+        if (lines.isEmpty()) return Result.failure(IllegalArgumentException("أضف مادة واحدة على الأقل"))
+        if (!paidAmount.isFinite() || paidAmount < 0.0)
+            return Result.failure(IllegalArgumentException("المبلغ المدفوع غير صالح"))
+        return database.withTransaction {
+            val grouped = lines.groupBy { it.productId }
+            val products = mutableMapOf<String, ProductEntity>()
+            for ((productId, productLines) in grouped) {
+                val product = productDao.getProductById(productId)
+                    ?: return@withTransaction Result.failure(IllegalArgumentException("إحدى المواد لم تعد موجودة"))
+                val required = productLines.sumOf { it.quantity }
+                if (productLines.any { !it.quantity.isFinite() || it.quantity <= 0.0 ||
+                        !it.sellingPricePerUnit.isFinite() || it.sellingPricePerUnit < 0.0 })
+                    return@withTransaction Result.failure(IllegalArgumentException("تحقق من الكميات وأسعار البيع"))
+                if (product.currentStockQty < required)
+                    return@withTransaction Result.failure(IllegalArgumentException("المخزون غير كافٍ للمادة: ${product.name}"))
+                products[productId] = product
+            }
+
+            val invoiceId = UUID.randomUUID().toString()
+            val lineEntities = mutableListOf<InvoiceLineEntity>()
+            var revenue = 0.0
+            var cost = 0.0
+            for (line in lines) {
+                val product = products.getValue(line.productId)
+                val lineRevenue = line.quantity * line.sellingPricePerUnit
+                val lineCost = line.quantity * product.currentAvgCost
+                val saleId = UUID.randomUUID().toString()
+                saleDao.insertSale(SaleEntity(
+                    id = saleId,
+                    productId = product.id,
+                    quantity = line.quantity,
+                    sellingPricePerUnit = line.sellingPricePerUnit,
+                    totalRevenue = lineRevenue,
+                    avgCostAtSale = product.currentAvgCost,
+                    totalCost = lineCost,
+                    profit = lineRevenue - lineCost,
+                    date = date,
+                    notes = "فاتورة $invoiceNumber"
+                ))
+                lineEntities += InvoiceLineEntity(
+                    invoiceId = invoiceId,
+                    productId = product.id,
+                    productNameSnapshot = product.name,
+                    unitSnapshot = product.unit,
+                    quantity = line.quantity,
+                    sellingPricePerUnit = line.sellingPricePerUnit,
+                    avgCostAtSale = product.currentAvgCost,
+                    totalRevenue = lineRevenue,
+                    totalCost = lineCost,
+                    profit = lineRevenue - lineCost,
+                    saleId = saleId
+                )
+                revenue += lineRevenue
+                cost += lineCost
+            }
+            if (paidAmount > revenue)
+                return@withTransaction Result.failure(IllegalArgumentException("المبلغ المدفوع أكبر من إجمالي الفاتورة"))
+            invoiceDao.insertInvoice(InvoiceEntity(
+                id = invoiceId,
+                invoiceNumber = invoiceNumber,
+                customerName = customerName,
+                date = date,
+                totalRevenue = revenue,
+                totalCost = cost,
+                totalProfit = revenue - cost,
+                paidAmount = paidAmount,
+                remainingAmount = revenue - paidAmount,
+                notes = notes
+            ))
+            invoiceDao.insertLines(lineEntities)
+            for ((productId, product) in products) {
+                val sold = grouped.getValue(productId).sumOf { it.quantity }
+                productDao.updateStockStats(productId, product.currentStockQty - sold, product.currentAvgCost)
+            }
+            Result.success(invoiceId)
+        }
+    }
+
+'''
+    r = r.replace(marker, method + marker)
+repo_file.write_text(r)
+
+# A real invoice-entry screen: choose products, enter quantities and manual prices, then save once.
+invoice_dir = root / "presentation/invoices"
+(invoice_dir / "InvoiceViewModel.kt").write_text(r'''package com.inventra.app.presentation.invoices
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.inventra.app.data.repository.InventraRepository
+import com.inventra.app.domain.model.Product
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+sealed class InvoiceSaveResult {
+    object Idle : InvoiceSaveResult()
+    data class Success(val invoiceId: String) : InvoiceSaveResult()
+    data class Error(val message: String) : InvoiceSaveResult()
+}
+
+@HiltViewModel
+class InvoiceViewModel @Inject constructor(
+    private val repository: InventraRepository
+) : ViewModel() {
+    val products: StateFlow<List<Product>> = repository.allProducts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _result = MutableStateFlow<InvoiceSaveResult>(InvoiceSaveResult.Idle)
+    val result: StateFlow<InvoiceSaveResult> = _result.asStateFlow()
+
+    fun save(number: String, customer: String, paid: Double, date: Long, notes: String,
+             lines: List<InventraRepository.InvoiceLineDraft>) {
+        viewModelScope.launch {
+            repository.createSalesInvoice(number, customer, paid, date, notes, lines).fold(
+                onSuccess = { _result.value = InvoiceSaveResult.Success(it) },
+                onFailure = { _result.value = InvoiceSaveResult.Error(it.message ?: "تعذر حفظ الفاتورة") }
+            )
+        }
+    }
+    fun reset() { _result.value = InvoiceSaveResult.Idle }
+}
+''')
+
+(invoice_dir / "InvoiceScreen.kt").write_text(r'''package com.inventra.app.presentation.invoices
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.inventra.app.data.repository.InventraRepository
+import com.inventra.app.domain.model.Product
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun InvoiceScreen(onBack: () -> Unit, viewModel: InvoiceViewModel = hiltViewModel()) {
+    val products by viewModel.products.collectAsStateWithLifecycle()
+    val result by viewModel.result.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val quantities = remember { mutableStateMapOf<String, String>() }
+    val prices = remember { mutableStateMapOf<String, String>() }
+    var customer by remember { mutableStateOf("") }
+    var number by remember { mutableStateOf("GG-" + System.currentTimeMillis().toString().takeLast(8)) }
+    var paid by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    val selected = products.filter { (quantities[it.id]?.toDoubleOrNull() ?: 0.0) > 0.0 }
+    val total = selected.sumOf { p -> (quantities[p.id]?.toDoubleOrNull() ?: 0.0) * (prices[p.id]?.toDoubleOrNull() ?: 0.0) }
+
+    LaunchedEffect(result) {
+        when (val r = result) {
+            is InvoiceSaveResult.Success -> { snackbar.showSnackbar("تم حفظ الفاتورة بنجاح"); viewModel.reset(); onBack() }
+            is InvoiceSaveResult.Error -> { snackbar.showSnackbar(r.message); viewModel.reset() }
+            else -> Unit
+        }
+    }
+    Scaffold(
+        topBar = { TopAppBar(
+            title = { Text("فاتورة مبيعات جديدة", fontWeight = FontWeight.Bold) },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") } }
+        ) },
+        snackbarHost = { SnackbarHost(snackbar) }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(number, { number = it }, label = { Text("رقم الفاتورة") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(customer, { customer = it }, label = { Text("اسم العميل") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Text("مواد الفاتورة", fontWeight = FontWeight.Bold)
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                items(products, key = { it.id }) { p ->
+                    InvoiceProductRow(p, quantities[p.id] ?: "", { quantities[p.id] = it },
+                        prices[p.id] ?: "", { prices[p.id] = it })
+                }
+            }
+            OutlinedTextField(paid, { paid = it }, label = { Text("المبلغ المدفوع") },
+                modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+            OutlinedTextField(notes, { notes = it }, label = { Text("ملاحظات") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text("عدد المواد: ${selected.size}")
+                    Text("إجمالي الفاتورة: " + String.format(Locale.US, "%.2f", total), fontWeight = FontWeight.ExtraBold)
+                    Text("المتبقي: " + String.format(Locale.US, "%.2f", (total - (paid.toDoubleOrNull() ?: 0.0)).coerceAtLeast(0.0)))
+                }
+            }
+            Button(
+                onClick = {
+                    val lines = selected.map { p ->
+                        InventraRepository.InvoiceLineDraft(p.id, quantities[p.id]?.toDoubleOrNull() ?: 0.0,
+                            prices[p.id]?.toDoubleOrNull() ?: 0.0)
+                    }
+                    viewModel.save(number, customer, paid.toDoubleOrNull() ?: 0.0,
+                        System.currentTimeMillis(), notes, lines)
+                },
+                enabled = selected.isNotEmpty() && result !is InvoiceSaveResult.Success,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("حفظ الفاتورة وتحديث المخزون") }
+        }
+    }
+}
+
+@Composable
+private fun InvoiceProductRow(product: Product, quantity: String, onQuantity: (String) -> Unit,
+                              price: String, onPrice: (String) -> Unit) {
+    Card(shape = RoundedCornerShape(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(product.name + "  •  المتوفر: " + String.format(Locale.US, "%,.2f", product.currentStockQty),
+                fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(quantity, onQuantity, label = { Text("الكمية") }, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                OutlinedTextField(price, onPrice, label = { Text("سعر الوحدة") }, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+            }
+        }
+    }
+}
+''')
+
+print("Original invoice persistence, Room migration, transactional multi-line sale/stock updates, and invoice-entry UI generated.")
